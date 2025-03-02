@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Compressor & Base64 Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex flex-col items-center p-6">
+
+    <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-lg text-center">
+        <h2 class="text-xl font-bold mb-4">📷 Image Compressor & Base64 Converter</h2>
+
+        <div id="dropArea" class="border-2 border-dashed p-6 rounded-lg text-gray-500 bg-gray-50 hover:bg-gray-100 cursor-pointer">
+            📂 Drag & Drop or <span class="text-blue-500">Click to Upload</span>
+            <input type="file" id="imageInput" accept="image/*" class="hidden">
+        </div>
+
+        <p class="text-sm text-gray-600 mt-2">Original Size: <span id="originalSize">0 KB</span></p>
+
+        <img id="preview" class="w-full max-w-xs mt-3 hidden rounded-md shadow-md" alt="Preview">
+
+        <label class="block mt-4">Compression Quality (0.1 - 1):</label>
+        <input type="range" id="quality" min="0.1" max="1" step="0.1" value="0.5" class="w-full">
+        
+        <p class="text-sm text-gray-600">Compressed Size: <span id="compressedSize">0 KB</span></p>
+
+        <div class="w-full bg-gray-200 rounded-full mt-3 hidden" id="progressContainer">
+            <div class="bg-blue-500 text-xs text-center text-white p-1 leading-none rounded-full w-0" id="progressBar"></div>
+        </div>
+
+        <label class="block mt-4">Output Format:</label>
+        <select id="format" class="border p-2 rounded">
+            <option value="image/jpeg">JPEG</option>
+            <option value="image/png">PNG</option>
+            <option value="image/webp">WebP</option>
+        </select>
+
+        <button id="downloadBtn" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50" disabled>Download Image</button>
+        
+        <h3 class="mt-4 font-semibold">🖥️ Base64 Output</h3>
+        <textarea id="base64Output" class="w-full h-24 p-2 border rounded text-sm" readonly></textarea>
+        <button id="copyBtn" class="mt-2 px-3 py-1 bg-green-500 text-white rounded hidden">Copy Base64</button>
+    </div>
+
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <script>
+        const dropArea = document.getElementById("dropArea");
+        const imageInput = document.getElementById("imageInput");
+        const preview = document.getElementById("preview");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        const qualityInput = document.getElementById("quality");
+        const formatSelect = document.getElementById("format");
+        const originalSizeDisplay = document.getElementById("originalSize");
+        const compressedSizeDisplay = document.getElementById("compressedSize");
+        const downloadBtn = document.getElementById("downloadBtn");
+        const base64Output = document.getElementById("base64Output");
+        const copyBtn = document.getElementById("copyBtn");
+        const progressBar = document.getElementById("progressBar");
+        const progressContainer = document.getElementById("progressContainer");
+
+        let imageFile;
+
+        function handleFile(file) {
+            if (file) {
+                imageFile = file;
+                originalSizeDisplay.textContent = (imageFile.size / 1024).toFixed(2) + " KB";
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const img = new Image();
+                    img.onload = function () {
+                        const maxWidth = 500;
+                        const scale = maxWidth / img.width;
+                        const newHeight = img.height * scale;
+                        canvas.width = maxWidth;
+                        canvas.height = newHeight;
+
+                        ctx.drawImage(img, 0, 0, maxWidth, newHeight);
+                        preview.src = canvas.toDataURL("image/jpeg", 1);
+                        preview.classList.remove("hidden");
+                        updateCompressedImage();
+                        downloadBtn.disabled = false;
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(imageFile);
+            }
+        }
+
+        dropArea.addEventListener("click", () => imageInput.click());
+        dropArea.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropArea.classList.add("bg-gray-200");
+        });
+
+        dropArea.addEventListener("dragleave", () => {
+            dropArea.classList.remove("bg-gray-200");
+        });
+
+        dropArea.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropArea.classList.remove("bg-gray-200");
+            const files = e.dataTransfer.files;
+            if (files.length) handleFile(files[0]);
+        });
+
+        imageInput.addEventListener("change", (event) => {
+            handleFile(event.target.files[0]);
+        });
+
+        function updateCompressedImage() {
+            if (!imageFile) return;
+            
+            progressContainer.classList.remove("hidden");
+            progressBar.style.width = "0%";
+
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 20;
+                progressBar.style.width = `${progress}%`;
+                if (progress >= 100) clearInterval(interval);
+            }, 100);
+
+            setTimeout(() => {
+                const quality = parseFloat(qualityInput.value);
+                const format = formatSelect.value;
+                const compressedDataUrl = canvas.toDataURL(format, quality);
+                fetch(compressedDataUrl)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        compressedSizeDisplay.textContent = (blob.size / 1024).toFixed(2) + " KB";
+                        base64Output.value = compressedDataUrl;
+                        copyBtn.classList.remove("hidden");
+                        progressBar.style.width = "100%";
+                    });
+            }, 500);
+        }
+
+        qualityInput.addEventListener("input", updateCompressedImage);
+        formatSelect.addEventListener("change", updateCompressedImage);
+
+        downloadBtn.addEventListener("click", () => {
+            const quality = parseFloat(qualityInput.value);
+            const format = formatSelect.value;
+            const compressedDataUrl = canvas.toDataURL(format, quality);
+            const link = document.createElement("a");
+            link.href = compressedDataUrl;
+            link.download = `compressed-image.${format.split("/")[1]}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        copyBtn.addEventListener("click", () => {
+            base64Output.select();
+            document.execCommand("copy");
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => copyBtn.textContent = "Copy Base64", 2000);
+        });
+
+    </script>
+</body>
+</html>
